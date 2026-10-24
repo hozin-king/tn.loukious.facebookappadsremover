@@ -1,0 +1,77 @@
+name: Build & Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          CT=$(ls -d "$ANDROID_HOME"/cmdline-tools/* | head -n 1)
+          yes | "$CT/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0" "platform-tools"
+
+      - name: Build release APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Sign APK with debug key
+        run: |
+          set -e
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
+          echo "Built APK: $APK"
+          keytool -genkey -keystore /tmp/debug.keystore -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          "$BT/zipalign" -p 4 "$APK" /tmp/app-aligned.apk
+          "$BT/apksigner" sign --ks /tmp/debug.keystore --ks-pass pass:android --key-pass pass:android --out app/build/outputs/apk/release/FacebookAdsRemover-v1.22-hk1.apk /tmp/app-aligned.apk
+          "$BT/apksigner" verify app/build/outputs/apk/release/FacebookAdsRemover-v1.22-hk1.apk
+          ls -la app/build/outputs/apk/release/
+
+      - name: Create release and upload APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.22-hk1
+          name: Facebook Ads Remover v1.22 (fork build hk1)
+          body: |
+            Build dari fork hozin-king/tn.loukious.facebookappadsremover.
+            Modul asli karya Loukious: https://github.com/Xposed-Modules-Repo/tn.loukious.facebookappadsremover
+
+            Versi modul: 1.22 (versionCode 23)
+
+            Fitur utama:
+            - Blokir iklan Facebook: News Feed, Story, Reels, Marketplace, dan game
+            - Filter feed (sembunyikan Reels, saran, People You May Know, konten AI)
+            - Lihat Story tanpa menandai sudah dilihat
+            - Mode gelap paksa dan AMOLED black
+            - Buka tautan di browser eksternal, unwrap redirect l.php
+            - Unduh media dan repost Reels/Story
+
+            Cara pasang:
+            1. Install APK ini, aktifkan modul di LSPosed dengan scope hanya com.facebook.katana.
+            2. Facebook yang didukung: versi 576 dan 580 (versi 571 ke bawah tidak didukung).
+
+            Catatan:
+            - APK ini ditandatangani dengan debug key (bukan signature asli) agar bisa di-install; ini tidak mengubah fungsi modul.
+            - Modul ini memodifikasi aplikasi Facebook resmi. Gunakan dengan risiko sendiri.
+          files: app/build/outputs/apk/release/FacebookAdsRemover-v1.22-hk1.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
